@@ -90,6 +90,10 @@ pub struct Config {
     #[serde(default = "default_load_balancing_mode")]
     pub load_balancing_mode: String,
 
+    /// 自定义模型配置文件路径
+    #[serde(default = "default_custom_models_path")]
+    pub custom_models_path: Option<String>,
+
     /// 配置文件路径（运行时元数据，不写入 JSON）
     #[serde(skip)]
     config_path: Option<PathBuf>,
@@ -132,6 +136,10 @@ fn default_load_balancing_mode() -> String {
     "priority".to_string()
 }
 
+fn default_custom_models_path() -> Option<String> {
+    Some("custom_models.json".to_string())
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -154,6 +162,7 @@ impl Default for Config {
             proxy_password: None,
             admin_api_key: None,
             load_balancing_mode: default_load_balancing_mode(),
+            custom_models_path: default_custom_models_path(),
             config_path: None,
         }
     }
@@ -208,5 +217,35 @@ impl Config {
         let content = serde_json::to_string_pretty(self).context("序列化配置失败")?;
         fs::write(path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_custom_models_path_defaults_to_custom_models_json() {
+        let config = Config::default();
+        assert_eq!(config.custom_models_path.as_deref(), Some("custom_models.json"));
+    }
+
+    #[test]
+    fn test_load_preserves_custom_models_path() {
+        let path = std::env::temp_dir().join(format!(
+            "kiro-config-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+
+        std::fs::write(
+            &path,
+            r#"{"apiKey":"test","customModelsPath":"data/models.json"}"#,
+        )
+        .unwrap();
+
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.custom_models_path.as_deref(), Some("data/models.json"));
+
+        std::fs::remove_file(path).unwrap();
     }
 }
