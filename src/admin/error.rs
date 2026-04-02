@@ -10,7 +10,7 @@ use super::types::AdminErrorResponse;
 #[derive(Debug)]
 pub enum AdminServiceError {
     /// 凭据不存在
-    NotFound { id: u64 },
+    NotFound { id: String },
 
     /// 上游服务调用失败（网络、API 错误等）
     UpstreamError(String),

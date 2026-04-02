@@ -9,10 +9,54 @@ use axum::{
 use super::{
     middleware::AdminState,
     types::{
-        AddCredentialRequest, SetDisabledRequest, SetLoadBalancingModeRequest, SetPriorityRequest,
-        SuccessResponse,
+        AddCredentialRequest, AddCustomModelRequest, SetDisabledRequest,
+        SetLoadBalancingModeRequest, SetPriorityRequest, SuccessResponse, UpdateCustomModelRequest,
     },
 };
+
+/// GET /api/admin/models
+/// 获取所有模型
+pub async fn get_all_models(State(state): State<AdminState>) -> impl IntoResponse {
+    let response = state.service.get_all_models();
+    Json(response)
+}
+
+/// POST /api/admin/models
+/// 添加自定义模型
+pub async fn add_custom_model(
+    State(state): State<AdminState>,
+    Json(payload): Json<AddCustomModelRequest>,
+) -> impl IntoResponse {
+    match state.service.add_custom_model(payload) {
+        Ok(response) => Json(response).into_response(),
+        Err(e) => (e.status_code(), Json(e.into_response())).into_response(),
+    }
+}
+
+/// PUT /api/admin/models/:id
+/// 更新自定义模型
+pub async fn update_custom_model(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateCustomModelRequest>,
+) -> impl IntoResponse {
+    match state.service.update_custom_model(&id, payload) {
+        Ok(response) => Json(response).into_response(),
+        Err(e) => (e.status_code(), Json(e.into_response())).into_response(),
+    }
+}
+
+/// DELETE /api/admin/models/:id
+/// 删除自定义模型
+pub async fn delete_custom_model(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.service.delete_custom_model(&id) {
+        Ok(_) => Json(SuccessResponse::new(format!("自定义模型 {} 已删除", id))).into_response(),
+        Err(e) => (e.status_code(), Json(e.into_response())).into_response(),
+    }
+}
 
 /// GET /api/admin/credentials
 /// 获取所有凭据状态

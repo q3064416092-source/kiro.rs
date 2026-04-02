@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::kiro::model::credentials::KiroCredentials;
 use crate::kiro::token_manager::MultiTokenManager;
+use crate::model::custom_models::{ModelManager, UpsertCustomModel};
 
 use super::error::AdminServiceError;
 use super::types::{
-    AddCredentialRequest, AddCredentialResponse, BalanceResponse, CredentialStatusItem,
-    CredentialsStatusResponse, LoadBalancingModeResponse, SetLoadBalancingModeRequest,
+    AddCredentialRequest, AddCredentialResponse, AddCustomModelRequest, AddCustomModelResponse,
+    BalanceResponse, CredentialStatusItem, CredentialsStatusResponse, LoadBalancingModeResponse,
+    ModelsAdminResponse, SetLoadBalancingModeRequest, SuccessResponse, UpdateCustomModelRequest,
 };
 
 /// 余额缓存过期时间（秒），5 分钟
@@ -34,12 +36,13 @@ struct CachedBalance {
 /// 封装所有 Admin API 的业务逻辑
 pub struct AdminService {
     token_manager: Arc<MultiTokenManager>,
+    model_manager: Arc<ModelManager>,
     balance_cache: Mutex<HashMap<u64, CachedBalance>>,
     cache_path: Option<PathBuf>,
 }
 
 impl AdminService {
-    pub fn new(token_manager: Arc<MultiTokenManager>) -> Self {
+    pub fn new(token_manager: Arc<MultiTokenManager>, model_manager: Arc<ModelManager>) -> Self {
         let cache_path = token_manager
             .cache_dir()
             .map(|d| d.join("kiro_balance_cache.json"));
@@ -48,9 +51,89 @@ impl AdminService {
 
         Self {
             token_manager,
+            model_manager,
             balance_cache: Mutex::new(balance_cache),
             cache_path,
         }
+    }
+
+    /// 获取所有模型
+    pub fn get_all_models(&self) -> ModelsAdminResponse {
+        let models = self.model_manager.list_models();
+        ModelsAdminResponse {
+            built_in: models.built_in,
+            custom: models.custom,
+        }
+    }
+
+    /// 添加自定义模型
+    pub fn add_custom_model(
+        &self,
+        req: AddCustomModelRequest,
+    ) -> Result<AddCustomModelResponse, AdminServiceError> {
+        let model = self
+            .model_manager
+            .add_model(UpsertCustomModel {
+                id: req.id,
+                display_name: req.display_name,
+                model_type: req.model_type,
+                max_tokens: req.max_tokens,
+                owned_by: req.owned_by,
+                target_model: req.target_model,
+            })
+            .map_err(|e| AdminServiceError::InvalidCredential(e.to_string()))?;
+
+        Ok(AddCustomModelResponse {
+            success: true,
+            message: "自定义模型已添加".to_string(),
+            model,
+        })
+    }
+
+    /// 更新自定义模型
+    pub fn update_custom_model(
+        &self,
+        id: &str,
+        req: UpdateCustomModelRequest,
+    ) -> Result<SuccessResponse, AdminServiceError> {
+        self.model_manager
+            .update_model(
+                id,
+                UpsertCustomModel {
+                    id: req.id,
+                    display_name: req.display_name,
+                    model_type: req.model_type,
+                    max_tokens: req.max_tokens,
+                    owned_by: req.owned_by,
+                    target_model: req.target_model,
+                },
+            )
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("不存在") {
+                    AdminServiceError::NotFound {
+                        id: id.to_string(),
+                    }
+                } else {
+                    AdminServiceError::InvalidCredential(msg)
+                }
+            })?;
+
+        Ok(SuccessResponse::new("自定义模型已更新"))
+    }
+
+    /// 删除自定义模型
+    pub fn delete_custom_model(&self, id: &str) -> Result<(), AdminServiceError> {
+        self.model_manager.delete_model(id).map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("不存在") {
+                AdminServiceError::NotFound {
+                    id: id.to_string(),
+                }
+            } else {
+                AdminServiceError::InvalidCredential(msg)
+            }
+        })
     }
 
     /// 获取所有凭据状态
@@ -345,7 +428,9 @@ impl AdminService {
     fn classify_error(&self, e: anyhow::Error, id: u64) -> AdminServiceError {
         let msg = e.to_string();
         if msg.contains("不存在") {
-            AdminServiceError::NotFound { id }
+            AdminServiceError::NotFound {
+                id: id.to_string(),
+            }
         } else {
             AdminServiceError::InternalError(msg)
         }
@@ -357,7 +442,9 @@ impl AdminService {
 
         // 1. 凭据不存在
         if msg.contains("不存在") {
-            return AdminServiceError::NotFound { id };
+            return AdminServiceError::NotFound {
+                id: id.to_string(),
+            };
         }
 
         // 2. 上游服务错误特征：HTTP 响应错误或网络错误
@@ -414,7 +501,9 @@ impl AdminService {
     fn classify_delete_error(&self, e: anyhow::Error, id: u64) -> AdminServiceError {
         let msg = e.to_string();
         if msg.contains("不存在") {
-            AdminServiceError::NotFound { id }
+            AdminServiceError::NotFound {
+                id: id.to_string(),
+            }
         } else if msg.contains("只能删除已禁用的凭据") || msg.contains("请先禁用凭据") {
             AdminServiceError::InvalidCredential(msg)
         } else {

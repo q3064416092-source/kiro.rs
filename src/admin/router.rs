@@ -2,14 +2,15 @@
 
 use axum::{
     Router, middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 
 use super::{
     handlers::{
-        add_credential, delete_credential, force_refresh_token, get_all_credentials,
-        get_credential_balance, get_load_balancing_mode, reset_failure_count,
-        set_credential_disabled, set_credential_priority, set_load_balancing_mode,
+        add_credential, add_custom_model, delete_credential, delete_custom_model,
+        force_refresh_token, get_all_credentials, get_all_models, get_credential_balance,
+        get_load_balancing_mode, reset_failure_count, set_credential_disabled,
+        set_credential_priority, set_load_balancing_mode, update_custom_model,
     },
     middleware::{AdminState, admin_auth_middleware},
 };
@@ -34,6 +35,8 @@ use super::{
 /// - `Authorization: Bearer <token>` header
 pub fn create_admin_router(state: AdminState) -> Router {
     Router::new()
+        .route("/models", get(get_all_models).post(add_custom_model))
+        .route("/models/{id}", put(update_custom_model).delete(delete_custom_model))
         .route(
             "/credentials",
             get(get_all_credentials).post(add_credential),

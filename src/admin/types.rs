@@ -1,5 +1,7 @@
 //! Admin API 类型定义
 
+use crate::anthropic::types::Model;
+use crate::model::custom_models::CustomModel;
 use serde::{Deserialize, Serialize};
 
 // ============ 凭据状态 ============
@@ -139,6 +141,36 @@ pub struct AddCredentialResponse {
     /// 用户邮箱（如果获取成功）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+}
+
+// ============ 模型管理 ============
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelsAdminResponse {
+    pub built_in: Vec<Model>,
+    pub custom: Vec<CustomModel>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AddCustomModelRequest {
+    pub id: String,
+    pub display_name: String,
+    pub model_type: String,
+    pub max_tokens: i32,
+    pub owned_by: String,
+    pub target_model: String,
+}
+
+pub type UpdateCustomModelRequest = AddCustomModelRequest;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddCustomModelResponse {
+    pub success: bool,
+    pub message: String,
+    pub model: CustomModel,
 }
 
 // ============ 余额查询 ============
