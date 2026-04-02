@@ -42,7 +42,8 @@
 - **工具调用**: 完整支持 function calling / tool use
 - **WebSearch**: 内置 WebSearch 工具转换逻辑
 - **多模型支持**: 支持 Sonnet、Opus、Haiku 系列模型
-- **Admin 管理**: 可选的 Web 管理界面和 API，支持凭据管理、余额查询等
+- **自定义模型**: 支持通过配置文件和 Admin UI 维护模型别名，并映射到真实 Kiro 模型
+- **Admin 管理**: 可选的 Web 管理界面和 API，支持凭据管理、余额查询、自定义模型管理等
 - **多级 Region 配置**: 支持全局和凭据级别的 Auth Region / API Region 配置
 - **凭据级代理**: 支持为每个凭据单独配置 HTTP/SOCKS5 代理，优先级：凭据代理 > 全局代理 > 无代理
 
@@ -101,7 +102,10 @@ cargo build --release
    "region": "us-east-1"
 }
 ```
+
 > PS: 如果你需要 Web 管理面板, 请注意配置 `adminApiKey`
+>
+> 若需启用自定义模型持久化, 可额外配置 `customModelsPath`，默认值为 `custom_models.json`。
 
 创建 `credentials.json`（从 Kiro IDE 等中获取凭证信息）：
 > PS: 可以前往 Web 管理面板配置跳过本步骤
@@ -127,6 +131,12 @@ IdC 认证：
 }
 ```
 
+可选：创建 `custom_models.json`（首次启动后也可由服务自动创建）
+
+```json
+[]
+```
+
 ### 3. 启动
 
 ```bash
@@ -140,6 +150,15 @@ IdC 认证：
 ```
 
 ### 4. 验证
+
+验证基础模型接口：
+
+```bash
+curl http://127.0.0.1:8990/v1/models \
+  -H "x-api-key: sk-kiro-rs-qazWSXedcRFV123456"
+```
+
+验证消息接口：
 
 ```bash
 curl http://127.0.0.1:8990/v1/messages \
@@ -155,6 +174,32 @@ curl http://127.0.0.1:8990/v1/messages \
   }'
 ```
 
+如启用了 Admin API 和自定义模型，可继续验证：
+
+```bash
+curl http://127.0.0.1:8990/api/admin/models \
+  -H "x-api-key: sk-admin-your-secret-key"
+```
+
+添加一个自定义模型：
+
+```bash
+curl http://127.0.0.1:8990/api/admin/models \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sk-admin-your-secret-key" \
+  -d '{
+    "id": "team-sonnet",
+    "displayName": "Team Sonnet",
+    "modelType": "chat",
+    "maxTokens": 64000,
+    "ownedBy": "custom",
+    "targetModel": "claude-sonnet-4-6"
+  }'
+```
+
+随后再次调用 `/v1/models`，应能看到 `team-sonnet`；调用 `/v1/messages` 时也可直接将 `model` 设为 `team-sonnet`。
+
 ### Docker
 
 也可以通过 Docker 启动：
@@ -163,7 +208,7 @@ curl http://127.0.0.1:8990/v1/messages \
 docker-compose up
 ```
 
-需要将 `config.json` 和 `credentials.json` 挂载到容器中，具体参见 `docker-compose.yml`。
+需要将 `config.json`、`credentials.json` 以及 `custom_models.json`（可选）挂载到容器中，具体参见 `docker-compose.yml`。
 
 ## 配置详解
 
@@ -190,6 +235,7 @@ docker-compose up
 | `proxyPassword` | string | - | 代理密码 |
 | `adminApiKey` | string | - | Admin API 密钥，配置后启用凭据管理 API 和 Web 管理界面 |
 | `loadBalancingMode` | string | `priority` | 负载均衡模式：`priority`（按优先级）或 `balanced`（均衡分配） |
+| `customModelsPath` | string | `custom_models.json` | 自定义模型配置文件路径 |
 
 完整配置示例：
 
@@ -213,7 +259,8 @@ docker-compose up
    "proxyUsername": "user",
    "proxyPassword": "pass",
    "adminApiKey": "sk-admin-your-secret-key",
-   "loadBalancingMode": "priority"
+   "loadBalancingMode": "priority",
+   "customModelsPath": "custom_models.json"
 }
 ```
 
@@ -372,8 +419,8 @@ RUST_LOG=debug ./target/release/kiro-rs
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/v1/models` | GET | 获取可用模型列表 |
-| `/v1/messages` | POST | 创建消息（对话） |
+| `/v1/models` | GET | 获取可用模型列表（内置模型 + 自定义模型） |
+| `/v1/messages` | POST | 创建消息（对话），支持传入自定义模型 ID |
 | `/v1/messages/count_tokens` | POST | 估算 Token 数量 |
 
 ### Claude Code 兼容端点 (/cc/v1)
@@ -431,12 +478,43 @@ RUST_LOG=debug ./target/release/kiro-rs
 
 ## 模型映射
 
+### 内置映射规则
+
 | Anthropic 模型 | Kiro 模型 |
 |----------------|-----------|
 | `*sonnet*` | `claude-sonnet-4.5` |
 | `*opus*`（含 4.5/4-5） | `claude-opus-4.5` |
 | `*opus*`（其他） | `claude-opus-4.6` |
 | `*haiku*` | `claude-haiku-4.5` |
+
+### 自定义模型
+
+项目支持通过 `custom_models.json` 定义自定义模型别名。每个自定义模型会映射到一个内置 Kiro 模型，并具备独立的展示名称、类型、所属方和最大 Token。
+
+示例：
+
+```json
+[
+  {
+    "id": "team-sonnet",
+    "displayName": "Team Sonnet",
+    "modelType": "chat",
+    "maxTokens": 64000,
+    "ownedBy": "custom",
+    "targetModel": "claude-sonnet-4-6",
+    "created": 1775088000
+  }
+]
+```
+
+你可以通过两种方式维护自定义模型：
+
+- 直接编辑 `custom_models.json`
+- 使用 Admin UI 的「模型管理」页面
+
+生效方式：
+- `GET /v1/models` 会返回内置模型和自定义模型的合并结果
+- `POST /v1/messages` 接收到自定义模型 ID 时，会自动解析为对应的 `targetModel`
 
 ## Admin（可选）
 
@@ -450,15 +528,24 @@ RUST_LOG=debug ./target/release/kiro-rs
   - `POST /api/admin/credentials/:id/priority` - 设置凭据优先级
   - `POST /api/admin/credentials/:id/reset` - 重置失败计数
   - `GET /api/admin/credentials/:id/balance` - 获取凭据余额
+  - `GET /api/admin/models` - 获取内置模型和自定义模型列表
+  - `POST /api/admin/models` - 添加自定义模型
+  - `PUT /api/admin/models/:id` - 更新自定义模型
+  - `DELETE /api/admin/models/:id` - 删除自定义模型
+  - `GET /api/admin/config/load-balancing` - 获取负载均衡模式
+  - `PUT /api/admin/config/load-balancing` - 设置负载均衡模式
 
 - **Admin UI**
   - `GET /admin` - 访问管理页面（需要在编译前构建 `admin-ui/dist`）
+  - 支持凭据管理、批量操作、负载均衡模式切换、自定义模型管理
 
 ## 注意事项
 
 1. **凭证安全**: 请妥善保管 `credentials.json` 文件，不要提交到版本控制
-2. **Token 刷新**: 服务会自动刷新过期的 Token，无需手动干预
-3. **WebSearch 工具**: 当 `tools` 列表仅包含一个 `web_search` 工具时，会走内置 WebSearch 转换逻辑
+2. **自定义模型文件**: `custom_models.json` 属于运行时数据文件，建议和 `config.json`、`credentials.json` 一样单独保存并备份
+3. **Token 刷新**: 服务会自动刷新过期的 Token，无需手动干预
+4. **WebSearch 工具**: 当 `tools` 列表仅包含一个 `web_search` 工具时，会走内置 WebSearch 转换逻辑
+5. **Admin UI 构建**: 若访问 `/admin` 返回静态资源未构建提示，请先执行 `cd admin-ui && pnpm build`
 
 ## 项目结构
 
@@ -472,7 +559,8 @@ kiro-rs/
 │   ├── test.rs                 # 测试
 │   ├── model/                  # 配置和参数模型
 │   │   ├── config.rs           # 应用配置
-│   │   └── arg.rs              # 命令行参数
+│   │   ├── arg.rs              # 命令行参数
+│   │   └── custom_models.rs    # 自定义模型管理
 │   ├── anthropic/              # Anthropic API 兼容层
 │   │   ├── router.rs           # 路由配置
 │   │   ├── handlers.rs         # 请求处理器
