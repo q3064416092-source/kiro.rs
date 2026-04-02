@@ -26,6 +26,48 @@ export interface CredentialStatusItem {
   disabledReason?: string
 }
 
+export interface ModelItem {
+  id: string
+  object: string
+  created: number
+  ownedBy: string
+  displayName: string
+  modelType: string
+  maxTokens: number
+}
+
+export interface CustomModelItem {
+  id: string
+  displayName: string
+  modelType: string
+  maxTokens: number
+  ownedBy: string
+  targetModel: string
+  created: number
+}
+
+export interface ModelsAdminResponse {
+  builtIn: ModelItem[]
+  custom: CustomModelItem[]
+}
+
+export interface AddCustomModelRequest {
+  id: string
+  displayName: string
+  modelType: string
+  maxTokens: number
+  ownedBy: string
+  targetModel: string
+}
+
+export type UpdateCustomModelRequest = AddCustomModelRequest
+
+export interface AddCustomModelResponse {
+  success: boolean
+  message: string
+  model: CustomModelItem
+}
+
 // 余额响应
 export interface BalanceResponse {
   id: number

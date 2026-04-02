@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { RefreshCw, LogOut, Moon, Sun, Server, Plus, Upload, FileUp, Trash2, RotateCcw, CheckCircle2 } from 'lucide-react'
+import { RefreshCw, LogOut, Moon, Sun, Server, Plus, Upload, FileUp, Trash2, RotateCcw, CheckCircle2, Boxes } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { storage } from '@/lib/storage'
@@ -12,6 +12,7 @@ import { AddCredentialDialog } from '@/components/add-credential-dialog'
 import { BatchImportDialog } from '@/components/batch-import-dialog'
 import { KamImportDialog } from '@/components/kam-import-dialog'
 import { BatchVerifyDialog, type VerifyResult } from '@/components/batch-verify-dialog'
+import { ModelManagementDialog } from '@/components/model-management-dialog'
 import { useCredentials, useDeleteCredential, useResetFailure, useLoadBalancingMode, useSetLoadBalancingMode } from '@/hooks/use-credentials'
 import { getCredentialBalance, forceRefreshToken } from '@/api/credentials'
 import { extractErrorMessage } from '@/lib/utils'
@@ -25,6 +26,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const [selectedCredentialId, setSelectedCredentialId] = useState<number | null>(null)
   const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [modelDialogOpen, setModelDialogOpen] = useState(false)
   const [batchImportDialogOpen, setBatchImportDialogOpen] = useState(false)
   const [kamImportDialogOpen, setKamImportDialogOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -55,7 +57,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const { data: loadBalancingData, isLoading: isLoadingMode } = useLoadBalancingMode()
   const { mutate: setLoadBalancingMode, isPending: isSettingMode } = useSetLoadBalancingMode()
 
-  // 计算分页
   const totalPages = Math.ceil((data?.credentials.length || 0) / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
@@ -66,12 +67,10 @@ export function Dashboard({ onLogout }: DashboardProps) {
     return Boolean(credential?.disabled)
   }).length
 
-  // 当凭据列表变化时重置到第一页
   useEffect(() => {
     setCurrentPage(1)
   }, [data?.credentials.length])
 
-  // 只保留当前仍存在的凭据缓存，避免删除后残留旧数据
   useEffect(() => {
     if (!data?.credentials) {
       setBalanceMap(new Map())
@@ -126,7 +125,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
     onLogout()
   }
 
-  // 选择管理
   const toggleSelect = (id: number) => {
     const newSelected = new Set(selectedIds)
     if (newSelected.has(id)) {
@@ -141,7 +139,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
     setSelectedIds(new Set())
   }
 
-  // 批量删除（仅删除已禁用项）
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) {
       toast.error('请先选择要删除的凭据')
@@ -176,14 +173,13 @@ export function Dashboard({ onLogout }: DashboardProps) {
               successCount++
               resolve()
             },
-            onError: (err) => {
+            onError: () => {
               failCount++
-              reject(err)
+              reject(new Error('delete failed'))
             }
           })
         })
-      } catch (error) {
-        // 错误已在 onError 中处理
+      } catch {
       }
     }
 
@@ -198,7 +194,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
     deselectAll()
   }
 
-  // 批量恢复异常
   const handleBatchResetFailure = async () => {
     if (selectedIds.size === 0) {
       toast.error('请先选择要恢复的凭据')
@@ -207,7 +202,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
     const failedIds = Array.from(selectedIds).filter(id => {
       const cred = data?.credentials.find(c => c.id === id)
-      return cred && cred.failureCount > 0
+      return Boolean(cred && cred.failureCount > 0)
     })
 
     if (failedIds.length === 0) {
@@ -226,121 +221,37 @@ export function Dashboard({ onLogout }: DashboardProps) {
               successCount++
               resolve()
             },
-            onError: (err) => {
+            onError: () => {
               failCount++
-              reject(err)
-            }
-          })
-        })
-      } catch (error) {
-        // 错误已在 onError 中处理
-      }
-    }
-
-    if (failCount === 0) {
-      toast.success(`成功恢复 ${successCount} 个凭据`)
-    } else {
-      toast.warning(`成功 ${successCount} 个，失败 ${failCount} 个`)
-    }
-
-    deselectAll()
-  }
-
-  // 批量刷新 Token
-  const handleBatchForceRefresh = async () => {
-    if (selectedIds.size === 0) {
-      toast.error('请先选择要刷新的凭据')
-      return
-    }
-
-    const enabledIds = Array.from(selectedIds).filter(id => {
-      const cred = data?.credentials.find(c => c.id === id)
-      return cred && !cred.disabled
-    })
-
-    if (enabledIds.length === 0) {
-      toast.error('选中的凭据中没有启用的凭据')
-      return
-    }
-
-    setBatchRefreshing(true)
-    setBatchRefreshProgress({ current: 0, total: enabledIds.length })
-
-    let successCount = 0
-    let failCount = 0
-
-    for (let i = 0; i < enabledIds.length; i++) {
-      try {
-        await forceRefreshToken(enabledIds[i])
-        successCount++
-      } catch {
-        failCount++
-      }
-      setBatchRefreshProgress({ current: i + 1, total: enabledIds.length })
-    }
-
-    setBatchRefreshing(false)
-    queryClient.invalidateQueries({ queryKey: ['credentials'] })
-
-    if (failCount === 0) {
-      toast.success(`成功刷新 ${successCount} 个凭据的 Token`)
-    } else {
-      toast.warning(`刷新 Token：成功 ${successCount} 个，失败 ${failCount} 个`)
-    }
-
-    deselectAll()
-  }
-
-  // 一键清除所有已禁用凭据
-  const handleClearAll = async () => {
-    if (!data?.credentials || data.credentials.length === 0) {
-      toast.error('没有可清除的凭据')
-      return
-    }
-
-    const disabledCredentials = data.credentials.filter(credential => credential.disabled)
-
-    if (disabledCredentials.length === 0) {
-      toast.error('没有可清除的已禁用凭据')
-      return
-    }
-
-    if (!confirm(`确定要清除所有 ${disabledCredentials.length} 个已禁用凭据吗？此操作无法撤销。`)) {
-      return
-    }
-
-    let successCount = 0
-    let failCount = 0
-
-    for (const credential of disabledCredentials) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          deleteCredential(credential.id, {
-            onSuccess: () => {
-              successCount++
-              resolve()
+              reject(new Error('reset failed'))
             },
-            onError: (err) => {
-              failCount++
-              reject(err)
-            }
           })
         })
-      } catch (error) {
-        // 错误已在 onError 中处理
+      } catch {
       }
     }
 
     if (failCount === 0) {
-      toast.success(`成功清除所有 ${successCount} 个已禁用凭据`)
+      toast.success(`成功恢复 ${successCount} 个异常凭据`)
     } else {
-      toast.warning(`清除已禁用凭据：成功 ${successCount} 个，失败 ${failCount} 个`)
+      toast.warning(`恢复异常完成：成功 ${successCount} 个，失败 ${failCount} 个`)
     }
 
     deselectAll()
   }
 
-  // 查询当前页凭据信息（逐个查询，避免瞬时并发）
+  const handleToggleLoadBalancing = () => {
+    const nextMode = loadBalancingData?.mode === 'priority' ? 'balanced' : 'priority'
+    setLoadBalancingMode(nextMode, {
+      onSuccess: () => {
+        toast.success(`已切换为${nextMode === 'priority' ? '优先级' : '均衡负载'}模式`)
+      },
+      onError: (err: unknown) => {
+        toast.error(`切换失败: ${extractErrorMessage(err)}`)
+      },
+    })
+  }
+
   const handleQueryCurrentPageInfo = async () => {
     if (currentCredentials.length === 0) {
       toast.error('当前页没有可查询的凭据')
@@ -380,7 +291,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
           next.set(id, balance)
           return next
         })
-      } catch (error) {
+      } catch {
         failCount++
       } finally {
         setLoadingBalanceIds(prev => {
@@ -402,14 +313,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
     }
   }
 
-  // 批量验活
   const handleBatchVerify = async () => {
     if (selectedIds.size === 0) {
       toast.error('请先选择要验活的凭据')
       return
     }
 
-    // 初始化状态
     setVerifying(true)
     cancelVerifyRef.current = false
     const ids = Array.from(selectedIds)
@@ -417,7 +326,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
     let successCount = 0
 
-    // 初始化结果，所有凭据状态为 pending
     const initialResults = new Map<number, VerifyResult>()
     ids.forEach(id => {
       initialResults.set(id, { id, status: 'pending' })
@@ -425,9 +333,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
     setVerifyResults(initialResults)
     setVerifyDialogOpen(true)
 
-    // 开始验活
     for (let i = 0; i < ids.length; i++) {
-      // 检查是否取消
       if (cancelVerifyRef.current) {
         toast.info('已取消验活')
         break
@@ -435,7 +341,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
       const id = ids[i]
 
-      // 更新当前凭据状态为 verifying
       setVerifyResults(prev => {
         const newResults = new Map(prev)
         newResults.set(id, { id, status: 'verifying' })
@@ -446,7 +351,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
         const balance = await getCredentialBalance(id)
         successCount++
 
-        // 更新为成功状态
         setVerifyResults(prev => {
           const newResults = new Map(prev)
           newResults.set(id, {
@@ -457,7 +361,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
           return newResults
         })
       } catch (error) {
-        // 更新为失败状态
         setVerifyResults(prev => {
           const newResults = new Map(prev)
           newResults.set(id, {
@@ -469,51 +372,101 @@ export function Dashboard({ onLogout }: DashboardProps) {
         })
       }
 
-      // 更新进度
       setVerifyProgress({ current: i + 1, total: ids.length })
-
-      // 添加延迟防止封号（最后一个不需要延迟）
-      if (i < ids.length - 1 && !cancelVerifyRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-      }
     }
 
     setVerifying(false)
 
     if (!cancelVerifyRef.current) {
-      toast.success(`验活完成：成功 ${successCount}/${ids.length}`)
+      if (successCount === ids.length) {
+        toast.success(`验活完成：全部 ${ids.length} 个凭据可用`)
+      } else {
+        toast.warning(`验活完成：成功 ${successCount} 个，失败 ${ids.length - successCount} 个`)
+      }
     }
   }
 
-  // 取消验活
-  const handleCancelVerify = () => {
-    cancelVerifyRef.current = true
-    setVerifying(false)
+  const handleBatchForceRefresh = async () => {
+    if (selectedIds.size === 0) {
+      toast.error('请先选择要刷新的凭据')
+      return
+    }
+
+    const ids = Array.from(selectedIds)
+    setBatchRefreshing(true)
+    setBatchRefreshProgress({ current: 0, total: ids.length })
+
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]
+      try {
+        await forceRefreshToken(id)
+        successCount++
+      } catch {
+        failCount++
+      }
+      setBatchRefreshProgress({ current: i + 1, total: ids.length })
+    }
+
+    setBatchRefreshing(false)
+
+    if (failCount === 0) {
+      toast.success(`成功刷新 ${successCount} 个凭据的 Token`)
+    } else {
+      toast.warning(`批量刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+    }
   }
 
-  // 切换负载均衡模式
-  const handleToggleLoadBalancing = () => {
-    const currentMode = loadBalancingData?.mode || 'priority'
-    const newMode = currentMode === 'priority' ? 'balanced' : 'priority'
+  const handleClearAll = async () => {
+    const disabledIds = data?.credentials.filter(credential => credential.disabled).map(credential => credential.id) || []
 
-    setLoadBalancingMode(newMode, {
-      onSuccess: () => {
-        const modeName = newMode === 'priority' ? '优先级模式' : '均衡负载模式'
-        toast.success(`已切换到${modeName}`)
-      },
-      onError: (error) => {
-        toast.error(`切换失败: ${extractErrorMessage(error)}`)
+    if (disabledIds.length === 0) {
+      toast.error('没有可清除的已禁用凭据')
+      return
+    }
+
+    if (!confirm(`确定要清除全部 ${disabledIds.length} 个已禁用凭据吗？此操作无法撤销。`)) {
+      return
+    }
+
+    let successCount = 0
+    let failCount = 0
+
+    for (const id of disabledIds) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          deleteCredential(id, {
+            onSuccess: () => {
+              successCount++
+              resolve()
+            },
+            onError: () => {
+              failCount++
+              reject(new Error('clear failed'))
+            }
+          })
+        })
+      } catch {
       }
-    })
+    }
+
+    if (failCount === 0) {
+      toast.success(`成功清除 ${successCount} 个已禁用凭据`)
+    } else {
+      toast.warning(`清除完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+    }
+
+    deselectAll()
   }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">加载中...</CardContent>
+        </Card>
       </div>
     )
   }
@@ -537,7 +490,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* 顶部导航 */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-2">
@@ -567,9 +519,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
         </div>
       </header>
 
-      {/* 主内容 */}
       <main className="container mx-auto px-4 md:px-8 py-6">
-        {/* 统计卡片 */}
         <div className="grid gap-4 md:grid-cols-3 mb-6">
           <Card>
             <CardHeader className="pb-2">
@@ -606,7 +556,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
           </Card>
         </div>
 
-        {/* 凭据列表 */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -620,7 +569,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
                 </div>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap justify-end">
               {selectedIds.size > 0 && (
                 <>
                   <Button onClick={handleBatchVerify} size="sm" variant="outline">
@@ -682,6 +631,10 @@ export function Dashboard({ onLogout }: DashboardProps) {
                   清除已禁用
                 </Button>
               )}
+              <Button onClick={() => setModelDialogOpen(true)} size="sm" variant="outline">
+                <Boxes className="h-4 w-4 mr-2" />
+                模型管理
+              </Button>
               <Button onClick={() => setKamImportDialogOpen(true)} size="sm" variant="outline">
                 <FileUp className="h-4 w-4 mr-2" />
                 Kiro Account Manager 导入
@@ -718,7 +671,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
                 ))}
               </div>
 
-              {/* 分页控件 */}
               {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 mt-6">
                   <Button
@@ -747,40 +699,26 @@ export function Dashboard({ onLogout }: DashboardProps) {
         </div>
       </main>
 
-      {/* 余额对话框 */}
       <BalanceDialog
-        credentialId={selectedCredentialId}
         open={balanceDialogOpen}
         onOpenChange={setBalanceDialogOpen}
+        credentialId={selectedCredentialId}
       />
-
-      {/* 添加凭据对话框 */}
-      <AddCredentialDialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-      />
-
-      {/* 批量导入对话框 */}
-      <BatchImportDialog
-        open={batchImportDialogOpen}
-        onOpenChange={setBatchImportDialogOpen}
-      />
-
-      {/* KAM 账号导入对话框 */}
-      <KamImportDialog
-        open={kamImportDialogOpen}
-        onOpenChange={setKamImportDialogOpen}
-      />
-
-      {/* 批量验活对话框 */}
+      <AddCredentialDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+      <BatchImportDialog open={batchImportDialogOpen} onOpenChange={setBatchImportDialogOpen} />
+      <KamImportDialog open={kamImportDialogOpen} onOpenChange={setKamImportDialogOpen} />
       <BatchVerifyDialog
         open={verifyDialogOpen}
         onOpenChange={setVerifyDialogOpen}
-        verifying={verifying}
         progress={verifyProgress}
         results={verifyResults}
-        onCancel={handleCancelVerify}
+        verifying={verifying}
+        onCancel={() => {
+          cancelVerifyRef.current = true
+          setVerifying(false)
+        }}
       />
+      <ModelManagementDialog open={modelDialogOpen} onOpenChange={setModelDialogOpen} />
     </div>
   )
 }
