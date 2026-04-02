@@ -101,11 +101,23 @@ async fn main() {
         tls_backend: config.tls_backend,
     });
 
+    // 加载自定义模型管理器
+    let custom_models_path = config
+        .custom_models_path
+        .clone()
+        .unwrap_or_else(|| "custom_models.json".to_string());
+    let model_manager = model::custom_models::ModelManager::load(custom_models_path.into())
+        .unwrap_or_else(|e| {
+            tracing::error!("加载自定义模型失败: {}", e);
+            std::process::exit(1);
+        });
+
     // 构建 Anthropic API 路由（从第一个凭据获取 profile_arn）
     let anthropic_app = anthropic::create_router_with_provider(
         &api_key,
         Some(kiro_provider),
         first_credentials.profile_arn.clone(),
+        model_manager.clone(),
     );
 
     // 构建 Admin API 路由（如果配置了非空的 admin_api_key）

@@ -8,6 +8,7 @@ use axum::{
 };
 
 use crate::kiro::provider::KiroProvider;
+use crate::model::custom_models::ModelManager;
 
 use super::{
     handlers::{count_tokens, get_models, post_messages, post_messages_cc},
@@ -38,8 +39,9 @@ pub fn create_router_with_provider(
     api_key: impl Into<String>,
     kiro_provider: Option<KiroProvider>,
     profile_arn: Option<String>,
+    model_manager: ModelManager,
 ) -> Router {
-    let mut state = AppState::new(api_key);
+    let mut state = AppState::new(api_key, model_manager);
     if let Some(provider) = kiro_provider {
         state = state.with_kiro_provider(provider);
     }

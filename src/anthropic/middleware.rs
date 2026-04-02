@@ -12,6 +12,7 @@ use axum::{
 
 use crate::common::auth;
 use crate::kiro::provider::KiroProvider;
+use crate::model::custom_models::ModelManager;
 
 use super::types::ErrorResponse;
 
@@ -25,15 +26,18 @@ pub struct AppState {
     pub kiro_provider: Option<Arc<KiroProvider>>,
     /// Profile ARN（可选，用于请求）
     pub profile_arn: Option<String>,
+    /// 模型管理器
+    pub model_manager: Arc<ModelManager>,
 }
 
 impl AppState {
     /// 创建新的应用状态
-    pub fn new(api_key: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<String>, model_manager: ModelManager) -> Self {
         Self {
             api_key: api_key.into(),
             kiro_provider: None,
             profile_arn: None,
+            model_manager: Arc::new(model_manager),
         }
     }
 
@@ -81,4 +85,22 @@ pub fn cors_layer() -> tower_http::cors::CorsLayer {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_stores_model_manager() {
+        let path = std::env::temp_dir().join(format!(
+            "app-state-model-manager-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let manager = ModelManager::load(path.clone()).unwrap();
+        let state = AppState::new("test-key", manager);
+
+        assert_eq!(state.model_manager.resolve_model_id("unknown"), "unknown");
+        std::fs::remove_file(path).unwrap();
+    }
 }
