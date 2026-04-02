@@ -100,7 +100,12 @@ mod tests {
         let manager = ModelManager::load(path.clone()).unwrap();
         let state = AppState::new("test-key", manager);
 
-        assert_eq!(state.model_manager.resolve_model_id("unknown"), "unknown");
+        assert!(
+            state
+                .model_manager
+                .resolve_requested_model("unknown")
+                .is_none()
+        );
         std::fs::remove_file(path).unwrap();
     }
 }

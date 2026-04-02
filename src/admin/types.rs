@@ -160,7 +160,9 @@ pub struct AddCustomModelRequest {
     pub model_type: String,
     pub max_tokens: i32,
     pub owned_by: String,
-    pub target_model: String,
+    pub context_window: i32,
+    pub supports_thinking: bool,
+    pub credential_tier: crate::model::custom_models::CredentialTier,
 }
 
 pub type UpdateCustomModelRequest = AddCustomModelRequest;

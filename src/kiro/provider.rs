@@ -16,6 +16,7 @@ use crate::kiro::machine_id;
 use crate::kiro::model::credentials::KiroCredentials;
 use crate::kiro::token_manager::MultiTokenManager;
 use crate::model::config::TlsBackend;
+use crate::model::custom_models::CredentialTier;
 use parking_lot::Mutex;
 
 /// 每个凭据的最大重试次数
@@ -49,8 +50,8 @@ impl KiroProvider {
     pub fn with_proxy(token_manager: Arc<MultiTokenManager>, proxy: Option<ProxyConfig>) -> Self {
         let tls_backend = token_manager.config().tls_backend;
         // 预热：构建全局代理对应的 Client
-        let initial_client = build_client(proxy.as_ref(), 720, tls_backend)
-            .expect("创建 HTTP 客户端失败");
+        let initial_client =
+            build_client(proxy.as_ref(), 720, tls_backend).expect("创建 HTTP 客户端失败");
         let mut cache = HashMap::new();
         cache.insert(proxy.clone(), initial_client);
 
@@ -97,7 +98,10 @@ impl KiroProvider {
 
     /// 获取 API 基础域名（使用 config 级 api_region）
     pub fn base_domain(&self) -> String {
-        format!("q.{}.amazonaws.com", self.token_manager.config().effective_api_region())
+        format!(
+            "q.{}.amazonaws.com",
+            self.token_manager.config().effective_api_region()
+        )
     }
 
     /// 获取凭据级 API 基础 URL
@@ -127,6 +131,7 @@ impl KiroProvider {
     /// 从请求体中提取模型信息
     ///
     /// 尝试解析 JSON 请求体，提取 conversationState.currentMessage.userInputMessage.modelId
+    #[allow(dead_code)]
     fn extract_model_from_request(request_body: &str) -> Option<String> {
         use serde_json::Value;
 
@@ -154,8 +159,13 @@ impl KiroProvider {
     ///
     /// # Returns
     /// 返回原始的 HTTP Response，不做解析
-    pub async fn call_api(&self, request_body: &str) -> anyhow::Result<reqwest::Response> {
-        self.call_api_with_retry(request_body, false).await
+    pub async fn call_api(
+        &self,
+        request_body: &str,
+        credential_tier: CredentialTier,
+    ) -> anyhow::Result<reqwest::Response> {
+        self.call_api_with_retry(request_body, false, credential_tier)
+            .await
     }
 
     /// 发送流式 API 请求
@@ -171,8 +181,13 @@ impl KiroProvider {
     ///
     /// # Returns
     /// 返回原始的 HTTP Response，调用方负责处理流式数据
-    pub async fn call_api_stream(&self, request_body: &str) -> anyhow::Result<reqwest::Response> {
-        self.call_api_with_retry(request_body, true).await
+    pub async fn call_api_stream(
+        &self,
+        request_body: &str,
+        credential_tier: CredentialTier,
+    ) -> anyhow::Result<reqwest::Response> {
+        self.call_api_with_retry(request_body, true, credential_tier)
+            .await
     }
 
     /// 发送 MCP API 请求
@@ -197,7 +212,11 @@ impl KiroProvider {
         for attempt in 0..max_retries {
             // 获取调用上下文
             // MCP 调用（WebSearch 等工具）不涉及模型选择，无需按模型过滤凭据
-            let ctx = match self.token_manager.acquire_context(None).await {
+            let ctx = match self
+                .token_manager
+                .acquire_context(CredentialTier::Any)
+                .await
+            {
                 Ok(c) => c,
                 Err(e) => {
                     last_error = Some(e);
@@ -215,7 +234,10 @@ impl KiroProvider {
             };
 
             let url = self.mcp_url_for(&ctx.credentials);
-            let x_amz_user_agent = format!("aws-sdk-js/1.0.34 KiroIDE-{}-{}", config.kiro_version, machine_id);
+            let x_amz_user_agent = format!(
+                "aws-sdk-js/1.0.34 KiroIDE-{}-{}",
+                config.kiro_version, machine_id
+            );
             let user_agent = format!(
                 "aws-sdk-js/1.0.34 ua/2.1 os/{} lang/js md/nodejs#{} api/codewhispererstreaming#1.0.34 m/E KiroIDE-{}-{}",
                 config.system_version, config.node_version, config.kiro_version, machine_id
@@ -339,6 +361,7 @@ impl KiroProvider {
         &self,
         request_body: &str,
         is_stream: bool,
+        credential_tier: CredentialTier,
     ) -> anyhow::Result<reqwest::Response> {
         let total_credentials = self.token_manager.total_count();
         let max_retries = (total_credentials * MAX_RETRIES_PER_CREDENTIAL).min(MAX_TOTAL_RETRIES);
@@ -346,11 +369,10 @@ impl KiroProvider {
         let api_type = if is_stream { "流式" } else { "非流式" };
 
         // 尝试从请求体中提取模型信息
-        let model = Self::extract_model_from_request(request_body);
 
         for attempt in 0..max_retries {
             // 获取调用上下文（绑定 index、credentials、token）
-            let ctx = match self.token_manager.acquire_context(model.as_deref()).await {
+            let ctx = match self.token_manager.acquire_context(credential_tier).await {
                 Ok(c) => c,
                 Err(e) => {
                     last_error = Some(e);
@@ -368,7 +390,10 @@ impl KiroProvider {
             };
 
             let url = self.base_url_for(&ctx.credentials);
-            let x_amz_user_agent = format!("aws-sdk-js/1.0.34 KiroIDE-{}-{}", config.kiro_version, machine_id);
+            let x_amz_user_agent = format!(
+                "aws-sdk-js/1.0.34 KiroIDE-{}-{}",
+                config.kiro_version, machine_id
+            );
             let user_agent = format!(
                 "aws-sdk-js/1.0.34 ua/2.1 os/{} lang/js md/nodejs#{} api/codewhispererstreaming#1.0.34 m/E KiroIDE-{}-{}",
                 config.system_version, config.node_version, config.kiro_version, machine_id

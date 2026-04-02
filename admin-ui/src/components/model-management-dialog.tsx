@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -31,7 +31,9 @@ const emptyForm: AddCustomModelRequest = {
   modelType: 'chat',
   maxTokens: 64000,
   ownedBy: 'custom',
-  targetModel: '',
+  contextWindow: 1_000_000,
+  supportsThinking: true,
+  credentialTier: 'any',
 }
 
 export function ModelManagementDialog({ open, onOpenChange }: ModelManagementProps) {
@@ -66,7 +68,9 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
       modelType: editingModel.modelType,
       maxTokens: editingModel.maxTokens,
       ownedBy: editingModel.ownedBy,
-      targetModel: editingModel.targetModel,
+      contextWindow: editingModel.contextWindow,
+      supportsThinking: editingModel.supportsThinking,
+      credentialTier: editingModel.credentialTier,
     })
   }, [editingModel])
 
@@ -87,19 +91,19 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
     e.preventDefault()
 
     if (!form.id.trim()) {
-      toast.error('请输入模型 ID')
+      toast.error('请输入真实上游模型 ID')
       return
     }
     if (!form.displayName.trim()) {
       toast.error('请输入显示名称')
       return
     }
-    if (!form.targetModel.trim()) {
-      toast.error('请选择目标模型')
-      return
-    }
     if (!Number.isFinite(form.maxTokens) || form.maxTokens <= 0) {
       toast.error('最大 Token 必须大于 0')
+      return
+    }
+    if (!Number.isFinite(form.contextWindow) || form.contextWindow <= 0) {
+      toast.error('上下文窗口必须大于 0')
       return
     }
 
@@ -109,7 +113,9 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
       modelType: form.modelType.trim() || 'chat',
       maxTokens: form.maxTokens,
       ownedBy: form.ownedBy.trim() || 'custom',
-      targetModel: form.targetModel.trim(),
+      contextWindow: form.contextWindow,
+      supportsThinking: form.supportsThinking,
+      credentialTier: form.credentialTier,
     }
 
     if (editingModel) {
@@ -174,11 +180,11 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">模型 ID</label>
+                  <label className="text-sm font-medium">真实上游模型 ID</label>
                   <Input
                     value={form.id}
                     onChange={(e) => handleChange('id', e.target.value)}
-                    placeholder="例如：my-team-sonnet"
+                    placeholder="例如：claude-sonnet-4.7"
                     disabled={submitting}
                   />
                 </div>
@@ -188,7 +194,7 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
                   <Input
                     value={form.displayName}
                     onChange={(e) => handleChange('displayName', e.target.value)}
-                    placeholder="例如：团队 Sonnet"
+                    placeholder="例如：Claude Sonnet 4.7"
                     disabled={submitting}
                   />
                 </div>
@@ -226,21 +232,46 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">目标模型</label>
+                    <label className="text-sm font-medium">上下文窗口</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={form.contextWindow}
+                      onChange={(e) => handleChange('contextWindow', Number(e.target.value) || 0)}
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">支持 Thinking</label>
                     <select
-                      value={form.targetModel}
-                      onChange={(e) => handleChange('targetModel', e.target.value)}
-                      disabled={submitting || builtInOptions.length === 0}
+                      value={form.supportsThinking ? 'true' : 'false'}
+                      onChange={(e) => handleChange('supportsThinking', e.target.value === 'true')}
+                      disabled={submitting}
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <option value="">请选择目标模型</option>
-                      {builtInOptions.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.displayName} ({model.id})
-                        </option>
-                      ))}
+                      <option value="true">是</option>
+                      <option value="false">否</option>
                     </select>
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">凭据等级</label>
+                    <select
+                      value={form.credentialTier}
+                      onChange={(e) => handleChange('credentialTier', e.target.value as AddCustomModelRequest['credentialTier'])}
+                      disabled={submitting}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="any">any</option>
+                      <option value="opus">opus</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                  保存后，模型 ID 会直接作为最终发给上游的真实 `modelId`，不再映射到其它内置模型。
                 </div>
 
                 <DialogFooter className="pt-2">
@@ -306,10 +337,13 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
                       </div>
 
                       <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                        <div>目标模型：{model.targetModel}</div>
+                        <div>上游模型 ID：{model.upstreamModelId ?? model.id}</div>
                         <div>模型类型：{model.modelType}</div>
                         <div>所属方：{model.ownedBy}</div>
                         <div>最大 Token：{model.maxTokens}</div>
+                        <div>上下文窗口：{model.contextWindow}</div>
+                        <div>支持 Thinking：{model.supportsThinking ? '是' : '否'}</div>
+                        <div>凭据等级：{model.credentialTier}</div>
                       </div>
                     </div>
                   ))}
@@ -319,7 +353,7 @@ export function ModelManagementDialog({ open, onOpenChange }: ModelManagementPro
               <div className="rounded-md border p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                   <Plus className="h-4 w-4" />
-                  可映射的内置模型
+                  当前内置模型参考
                 </div>
                 <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-sm text-muted-foreground">
                   {builtInOptions.map((model) => (

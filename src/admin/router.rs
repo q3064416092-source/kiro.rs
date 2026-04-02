@@ -36,7 +36,10 @@ use super::{
 pub fn create_admin_router(state: AdminState) -> Router {
     Router::new()
         .route("/models", get(get_all_models).post(add_custom_model))
-        .route("/models/{id}", put(update_custom_model).delete(delete_custom_model))
+        .route(
+            "/models/{id}",
+            put(update_custom_model).delete(delete_custom_model),
+        )
         .route(
             "/credentials",
             get(get_all_credentials).post(add_credential),

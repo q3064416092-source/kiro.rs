@@ -8,6 +8,7 @@ use crate::kiro::parser::EventStreamDecoder;
 use crate::kiro::provider::KiroProvider;
 use crate::kiro::token_manager::TokenManager;
 use crate::model::config::Config;
+use crate::model::custom_models::CredentialTier;
 
 
 /// 调用流式 API 并实时打印返回
@@ -47,7 +48,9 @@ pub(crate) async fn call_stream_api() -> anyhow::Result<()> {
     println!("{}", "=".repeat(60));
 
     // 调用流式 API
-    let response = provider.call_api_stream(&request_body).await?;
+    let response = provider
+        .call_api_stream(&request_body, CredentialTier::Any)
+        .await?;
 
     // 获取字节流
     let mut stream = response.bytes_stream();

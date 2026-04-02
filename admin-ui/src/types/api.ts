@@ -42,7 +42,10 @@ export interface CustomModelItem {
   modelType: string
   maxTokens: number
   ownedBy: string
-  targetModel: string
+  contextWindow: number
+  supportsThinking: boolean
+  credentialTier: 'any' | 'opus'
+  upstreamModelId?: string
   created: number
 }
 
@@ -57,7 +60,9 @@ export interface AddCustomModelRequest {
   modelType: string
   maxTokens: number
   ownedBy: string
-  targetModel: string
+  contextWindow: number
+  supportsThinking: boolean
+  credentialTier: 'any' | 'opus'
 }
 
 export type UpdateCustomModelRequest = AddCustomModelRequest

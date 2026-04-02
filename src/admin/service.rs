@@ -79,7 +79,9 @@ impl AdminService {
                 model_type: req.model_type,
                 max_tokens: req.max_tokens,
                 owned_by: req.owned_by,
-                target_model: req.target_model,
+                context_window: req.context_window,
+                supports_thinking: req.supports_thinking,
+                credential_tier: req.credential_tier,
             })
             .map_err(|e| AdminServiceError::InvalidCredential(e.to_string()))?;
 
@@ -105,15 +107,15 @@ impl AdminService {
                     model_type: req.model_type,
                     max_tokens: req.max_tokens,
                     owned_by: req.owned_by,
-                    target_model: req.target_model,
+                    context_window: req.context_window,
+                    supports_thinking: req.supports_thinking,
+                    credential_tier: req.credential_tier,
                 },
             )
             .map_err(|e| {
                 let msg = e.to_string();
-                if msg.contains("不存在") {
-                    AdminServiceError::NotFound {
-                        id: id.to_string(),
-                    }
+                if msg.contains("不存在") || msg.contains("not found") {
+                    AdminServiceError::NotFound { id: id.to_string() }
                 } else {
                     AdminServiceError::InvalidCredential(msg)
                 }
@@ -126,10 +128,8 @@ impl AdminService {
     pub fn delete_custom_model(&self, id: &str) -> Result<(), AdminServiceError> {
         self.model_manager.delete_model(id).map_err(|e| {
             let msg = e.to_string();
-            if msg.contains("不存在") {
-                AdminServiceError::NotFound {
-                    id: id.to_string(),
-                }
+            if msg.contains("不存在") || msg.contains("not found") {
+                AdminServiceError::NotFound { id: id.to_string() }
             } else {
                 AdminServiceError::InvalidCredential(msg)
             }
@@ -428,9 +428,7 @@ impl AdminService {
     fn classify_error(&self, e: anyhow::Error, id: u64) -> AdminServiceError {
         let msg = e.to_string();
         if msg.contains("不存在") {
-            AdminServiceError::NotFound {
-                id: id.to_string(),
-            }
+            AdminServiceError::NotFound { id: id.to_string() }
         } else {
             AdminServiceError::InternalError(msg)
         }
@@ -442,9 +440,7 @@ impl AdminService {
 
         // 1. 凭据不存在
         if msg.contains("不存在") {
-            return AdminServiceError::NotFound {
-                id: id.to_string(),
-            };
+            return AdminServiceError::NotFound { id: id.to_string() };
         }
 
         // 2. 上游服务错误特征：HTTP 响应错误或网络错误
@@ -501,10 +497,9 @@ impl AdminService {
     fn classify_delete_error(&self, e: anyhow::Error, id: u64) -> AdminServiceError {
         let msg = e.to_string();
         if msg.contains("不存在") {
-            AdminServiceError::NotFound {
-                id: id.to_string(),
-            }
-        } else if msg.contains("只能删除已禁用的凭据") || msg.contains("请先禁用凭据") {
+            AdminServiceError::NotFound { id: id.to_string() }
+        } else if msg.contains("只能删除已禁用的凭据") || msg.contains("请先禁用凭据")
+        {
             AdminServiceError::InvalidCredential(msg)
         } else {
             AdminServiceError::InternalError(msg)

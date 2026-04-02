@@ -215,7 +215,8 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("配置文件路径未知，无法保存配置"))?;
 
         let content = serde_json::to_string_pretty(self).context("序列化配置失败")?;
-        fs::write(path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
+        fs::write(path, content)
+            .with_context(|| format!("写入配置文件失败: {}", path.display()))?;
         Ok(())
     }
 }
@@ -227,15 +228,15 @@ mod tests {
     #[test]
     fn test_custom_models_path_defaults_to_custom_models_json() {
         let config = Config::default();
-        assert_eq!(config.custom_models_path.as_deref(), Some("custom_models.json"));
+        assert_eq!(
+            config.custom_models_path.as_deref(),
+            Some("custom_models.json")
+        );
     }
 
     #[test]
     fn test_load_preserves_custom_models_path() {
-        let path = std::env::temp_dir().join(format!(
-            "kiro-config-{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let path = std::env::temp_dir().join(format!("kiro-config-{}.json", uuid::Uuid::new_v4()));
 
         std::fs::write(
             &path,
@@ -244,7 +245,10 @@ mod tests {
         .unwrap();
 
         let config = Config::load(&path).unwrap();
-        assert_eq!(config.custom_models_path.as_deref(), Some("data/models.json"));
+        assert_eq!(
+            config.custom_models_path.as_deref(),
+            Some("data/models.json")
+        );
 
         std::fs::remove_file(path).unwrap();
     }
